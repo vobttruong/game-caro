@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Cờ Caro</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;600;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<style>
+:root{--bg:#f3f1e8;--paper:#fbfaf4;--line:#b9d3e6;--ink:#1f2a37;--mute:#6b7280;--x:#d63a2f;--o:#1f5fbf;--card:#ffffff;--btn:#1f2a37;--btnt:#fff;--hl:#ffe98a}
+@media(prefers-color-scheme:dark){:root{--bg:#161a20;--paper:#1f252d;--line:#34506b;--ink:#e8edf2;--mute:#97a3b1;--x:#ff6b5e;--o:#6aa5ff;--card:#232a33;--btn:#e8edf2;--btnt:#161a20;--hl:#5a4d12}}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{font-family:'Be Vietnam Pro',system-ui,sans-serif;background:var(--bg);color:var(--ink);min-height:100%;padding:env(safe-area-inset-top) 12px env(safe-area-inset-bottom);display:flex;flex-direction:column;align-items:center}
+h1{font-weight:800;font-size:1.6rem;margin:16px 0 4px;letter-spacing:-.02em}
+.modes{display:flex;gap:6px;margin:8px 0;flex-wrap:wrap;justify-content:center}
+button{font:inherit;cursor:pointer;border:1.5px solid var(--ink);background:transparent;color:var(--ink);padding:8px 14px;border-radius:8px;font-weight:600}
+button:focus-visible,input:focus-visible,.c:focus-visible{outline:3px solid var(--o);outline-offset:2px}
+button.on,button.pri{background:var(--btn);color:var(--btnt)}
+.panel{background:var(--card);border-radius:12px;padding:10px 14px;margin:6px 0;width:min(96vw,560px);display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:center}
+.panel[hidden]{display:none}
+input{font:inherit;padding:8px 10px;border:1.5px solid var(--ink);border-radius:8px;background:var(--paper);color:var(--ink);width:7.5em;text-transform:uppercase;text-align:center;letter-spacing:.15em}
+select{font:inherit;padding:8px;border-radius:8px;border:1.5px solid var(--ink);background:var(--paper);color:var(--ink)}
+.code{font-size:1.5rem;font-weight:800;letter-spacing:.2em}
+#status{font-weight:600;min-height:1.6em;margin:8px 0;text-align:center}
+#status b.x{color:var(--x)}#status b.o{color:var(--o)}
+#board{display:grid;grid-template-columns:repeat(15,1fr);width:min(96vw,560px);aspect-ratio:1;background:var(--paper);border:2px solid var(--ink);border-radius:6px;touch-action:manipulation}
+.c{position:relative;border:0;border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:0;border-radius:0;background:transparent;container-type:size}
+.c:nth-child(15n){border-right:0}
+.c:nth-child(n+211){border-bottom:0}
+.c.last{background:var(--hl)}
+.c.win{background:var(--hl);animation:pop .5s ease-in-out 3}
+@keyframes pop{50%{transform:scale(1.15)}}
+@media(prefers-reduced-motion:reduce){.c.win{animation:none}}
+.c.x::before,.c.x::after{content:"";position:absolute;left:50%;top:50%;width:70%;height:12%;min-height:2px;background:var(--x);border-radius:3px;transform:translate(-50%,-50%) rotate(45deg)}
+.c.x::after{transform:translate(-50%,-50%) rotate(-45deg)}
+.c.o::before{content:"";position:absolute;inset:16%;border:max(2px,9cqw) solid var(--o);border-radius:50%}
+.foot{color:var(--mute);font-size:.85rem;margin:14px 0 20px;text-align:center}
+</style>
+</head>
+<body>
+<h1>Cờ Caro</h1>
+<div class="modes" id="modes">
+  <button data-m="ai" class="on">Chơi với máy</button>
+  <button data-m="local">2 người, 1 máy</button>
+  <button data-m="online">Chơi online</button>
+</div>
+<div class="panel" id="pAi"><label>Độ khó <select id="lvl"><option value="1">Dễ</option><option value="2" selected>Vừa</option><option value="3">Khó</option></select></label>
+  <label>Bạn đi <select id="side"><option value="1">Trước (X)</option><option value="2">Sau (O)</option></select></label></div>
+<div class="panel" id="pOn" hidden>
+  <button id="mk">Tạo phòng</button><span>hoặc</span>
+  <input id="jc" maxlength="5" placeholder="Mã phòng" aria-label="Mã phòng"><button id="jn">Vào phòng</button>
+  <div id="room" style="width:100%;text-align:center" hidden>Mã phòng: <span class="code" id="rc"></span><br><small>Gửi mã này cho người thân để cùng chơi</small></div>
+</div>
+<div id="status"></div>
+<div id="board" role="grid" aria-label="Bàn cờ 15x15"></div>
+<div class="panel" style="margin-top:12px"><button class="pri" id="again">Ván mới</button></div>
+<p class="foot">Xếp đủ 5 quân liên tiếp theo hàng, cột hoặc đường chéo để thắng.</p>
+<script>
+const N=15,$=s=>document.querySelector(s);
+let b,turn,over,mode='ai',me=1,last,peer,conn,lvl=2,aiSide=2,started=true;
+const bd=$('#board'),st=$('#status');
+for(let i=0;i<N*N;i++){const c=document.createElement('button');c.className='c';c.setAttribute('aria-label','Ô '+(Math.floor(i/N)+1)+','+(i%N+1));c.onclick=()=>click(Math.floor(i/N),i%N);bd.appendChild(c)}
+const cell=(r,c)=>bd.children[r*N+c];
+const nm=p=>p==1?'<b class="x">X</b>':'<b class="o">O</b>';
+const D=[[0,1],[1,0],[1,1],[1,-1]];
+function reset(){b=Array.from({length:N},()=>Array(N).fill(0));turn=1;over=false;last=null;
+  [...bd.children].forEach(c=>c.className='c');
+  if(mode=='ai'){aiSide=+$('#side').value==1?2:1;me=3-aiSide;lvl=+$('#lvl').value}
+  msg();if(mode=='ai'&&turn==aiSide)setTimeout(aiMove,350)}
+function msg(t){st.innerHTML=t||(mode=='online'&&!started?'Đang chờ người chơi khác…':mode=='online'?(turn==me?'Lượt của bạn ':'Đợi đối thủ ')+nm(turn):'Lượt '+nm(turn))}
+function line(r,c,p,[dr,dc]){let n=1,cells=[[r,c]],open=0;
+  for(const s of[1,-1]){let y=r+dr*s,x=c+dc*s;while(y>=0&&y<N&&x>=0&&x<N&&b[y][x]==p){n++;cells.push([y,x]);y+=dr*s;x+=dc*s}
+    if(y>=0&&y<N&&x>=0&&x<N&&b[y][x]==0)open++}
+  return{n,open,cells}}
+function click(r,c){if(over||b[r][c]||!started)return;
+  if(mode=='ai'&&turn!=me)return;
+  if(mode=='online'){if(turn!=me||!conn||!conn.open)return;conn.send({t:'move',r,c})}
+  play(r,c)}
+function play(r,c){const p=turn;b[r][c]=p;
+  if(last)cell(...last).classList.remove('last');
+  last=[r,c];const e=cell(r,c);e.classList.add(p==1?'x':'o','last');
+  for(const d of D){const l=line(r,c,p,d);if(l.n>=5){over=true;l.cells.forEach(([y,x])=>cell(y,x).classList.add('win'));
+    const who=mode=='ai'?(p==me?'Bạn thắng! 🎉':'Máy thắng!'):mode=='online'?(p==me?'Bạn thắng! 🎉':'Đối thủ thắng!'):'';
+    msg(who?who+' ('+nm(p)+')':nm(p)+' thắng! 🎉');return}}
+  if(b.every(row=>row.every(v=>v))){over=true;msg('Hòa!');return}
+  turn=3-p;msg();if(mode=='ai'&&turn==aiSide)setTimeout(aiMove,300)}
+const T={5:{0:1e5,1:1e5,2:1e5},4:{0:0,1:1500,2:12000},3:{0:0,1:90,2:1200},2:{0:0,1:8,2:90},1:{0:0,1:1,2:3}};
+function score(r,c,p){let s=0;for(const d of D){const l=line(r,c,p,d);s+=(T[Math.min(l.n,5)]||T[5])[l.open]}return s}
+function aiMove(){if(over)return;const p=aiSide,q=3-p;let best=[],bs=-1,any=false;
+  for(let r=0;r<N;r++)for(let c=0;c<N;c++){if(b[r][c])continue;
+    let near=false;for(let y=r-2;y<=r+2&&!near;y++)for(let x=c-2;x<=c+2;x++)if(y>=0&&y<N&&x>=0&&x<N&&b[y][x]){near=true;break}
+    if(!near)continue;any=true;
+    const a=score(r,c,p),d=score(r,c,q);
+    let s=lvl==1?a*.6+d*.5+Math.random()*60:lvl==2?a+d*.95+Math.random()*4:a*1.05+d+Math.random();
+    if(lvl==1&&a>=1e5)s=1e9;
+    if(s>bs+1e-9){bs=s;best=[[r,c]]}else if(Math.abs(s-bs)<1e-9)best.push([r,c])}
+  if(!any){play(7,7);return}
+  const m=best[Math.floor(Math.random()*best.length)];play(...m)}
+// ---------- online ----------
+function setMode(m){mode=m;document.querySelectorAll('#modes button').forEach(x=>x.classList.toggle('on',x.dataset.m==m));
+  $('#pAi').hidden=m!='ai';$('#pOn').hidden=m!='online';started=m!='online';
+  if(m!='online')closeNet();reset();
+  if(m=='online')st.textContent='Tạo phòng hoặc nhập mã để vào phòng.'}
+function closeNet(){try{conn&&conn.close();peer&&peer.destroy()}catch(e){}conn=peer=null;$('#room').hidden=true}
+function bind(c,role){conn=c;me=role;
+  c.on('open',()=>{started=true;reset();st.innerHTML='Đã kết nối! Bạn cầm '+nm(me)+'. '+(me==1?'Bạn đi trước.':'Đối thủ đi trước.')});
+  c.on('data',d=>{if(d.t=='move'&&!over&&turn!=me&&!b[d.r][d.c])play(d.r,d.c);if(d.t=='reset'){reset()}});
+  c.on('close',()=>{started=false;over=true;st.textContent='Đối thủ đã thoát. Hãy tạo phòng mới.'});
+  c.on('error',()=>st.textContent='Lỗi kết nối, thử lại nhé.')}
+$('#mk').onclick=()=>{closeNet();started=false;reset();
+  const code=Math.random().toString(36).slice(2,7).toUpperCase().replace(/[O0I1L]/g,'7');
+  peer=new Peer('caro-'+code);
+  peer.on('open',()=>{$('#rc').textContent=code;$('#room').hidden=false;msg()});
+  peer.on('connection',c=>{if(conn&&conn.open){c.close();return}bind(c,1)});
+  peer.on('error',e=>st.textContent='Không tạo được phòng ('+e.type+'). Thử lại.')};
+$('#jn').onclick=()=>{const code=$('#jc').value.trim().toUpperCase();if(code.length<5){st.textContent='Nhập đủ 5 ký tự mã phòng.';return}
+  closeNet();started=false;reset();st.textContent='Đang vào phòng…';
+  peer=new Peer();
+  peer.on('open',()=>bind(peer.connect('caro-'+code,{reliable:true}),2));
+  peer.on('error',e=>st.textContent=e.type=='peer-unavailable'?'Không tìm thấy phòng '+code+'.':'Lỗi kết nối ('+e.type+').')};
+$('#again').onclick=()=>{if(mode=='online'){if(!conn||!conn.open)return;conn.send({t:'reset'})}reset()};
+document.querySelectorAll('#modes button').forEach(x=>x.onclick=()=>setMode(x.dataset.m));
+$('#lvl').onchange=$('#side').onchange=reset;
+reset();
+</script>
+</body>
+</html>
